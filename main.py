@@ -1,9 +1,13 @@
 import cv2
 import urllib 
 import numpy as np
+import os, sys
 
 #config Data
 camera_IP = '10.111.76.25'
+
+#Set to true to attempt to display debug images. Should be false when running headless
+displayDebugImg = True
 
 
 #Global Data
@@ -47,19 +51,36 @@ def img_process(img):
 
 
 #Main Method
+
+#Open data stream from IP camera
 stream = urllib.urlopen('http://'+camera_IP+'/mjpg/video.mjpg')
 bytes = ''
-
-
 frame_counter = 0
 
-#cv2.startWindowThread()
-#cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
+
+#Attempt to initalize graphics for displaying video feeds, if requested.
+if(displayDebugImg):
+    try:
+        result = cv2.startWindowThread()
+    except Exception as e:
+        result = -1
+        print("Exception while attempting to start display")
+        
+    if(result != 1):
+        #If we couldnt' open the feeds, force debugging images off but continue
+        # normally otherwise. This usually happens when this is run without a desktop
+        # environment available (headless run).
+        print("Warning, could not start graphics. Will not produce debugging images")
+        displayDebugImg = False
+    
+    
+if(displayDebugImg):
+    cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
 
 
 while frame_counter < 300:
 
-    bytes += stream.read(16384)
+    bytes += stream.read(1024)
     b = bytes.rfind('\xff\xd9')
     a = bytes.rfind('\xff\xd8', 0, b-1)
     if a != -1 and b != -1:
@@ -75,7 +96,9 @@ while frame_counter < 300:
 
         img_process(img)
         
-        # cv2.imshow('Video', proc_img) 
+        if(displayDebugImg):
+            cv2.imshow('Video', img) 
+            
         print("Area: " + " | ".join(map(str,targetAreas)))
         print("X   : " + " | ".join(map(str,targetXs)))
         print("Y   : " + " | ".join(map(str,targetYs)))
@@ -83,7 +106,7 @@ while frame_counter < 300:
 
         
 
-
-#cv2.destroyAllWindows() 
+if(displayDebugImg):
+    cv2.destroyAllWindows() 
 
 
