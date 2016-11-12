@@ -58,6 +58,8 @@ Note that I've been testing with an axis M1013, which is a horrible camera choic
 since it is impossible to disable all brightness compensation. M1011 is better 
 for vision processing, I think... But, basicallly, we wouldn't ever want to use the M1013.
 
+[This](http://wpilib.screenstepslive.com/s/4485/m/24194/l/288984-camera-settings) is a good resource on this sort of thing.
+
 
 
 #Remote Desktop Connections
