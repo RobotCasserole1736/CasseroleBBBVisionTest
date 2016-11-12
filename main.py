@@ -1,9 +1,12 @@
 import cv2
-import urllib 
+import urllib2 as u
 import numpy as np
 import os, sys
 from datetime import datetime
 from datetime import timedelta
+import time
+import psutil
+import pythonled
 
 ################################################################################
 #Config Data
@@ -11,9 +14,6 @@ from datetime import timedelta
 
 #Fixed IP address of IP Camera
 camera_IP = '10.111.76.25'
-
-#Set to true to attempt to display debug images. Should be false when running headless
-displayDebugImg = False
 
 ################################################################################
 # Global Data
@@ -24,12 +24,28 @@ targetYs = []
 targetHeights = []
 targetWidths = []
 
+#global flag to turn debug display on and off
+# Presently attempts to display images, so shouldn't
+# ever get turned on if running without a display
+# hooked up (or VNC or something like that
+displayDebugImg = False
+
+#Timestamp tracking info. Needed for performance metrics and for reporting
+# image processing delay
 execution_start_time_ms = datetime.now()      #Marker for start of program execution
 frame_capture_time_ms = 0      #Marker for time of most recent full image frame capture
 prev_frame_capture_time_ms = 0 #Marker for previous full image frame capture
 ip_capture_time = 0            #Marker for time of most recent IP data RX
 proc_time_ms = 0               #Total time to process a frame in ms
 
+#Performance metric tracking
+fps_current = 0
+cpu_load_pct = 0
+mem_load_pct = 0
+
+
+#Status LED
+statusLED = pythonled.pythonled(0)
 
 
 
@@ -43,7 +59,29 @@ def millis():
    ms = (dt.days * 24 * 60 * 60 + dt.seconds) * 1000 + dt.microseconds / 1000.0
    return ms
    
-   
+# Performs a robust connection to a given URL, and returns a stream once created
+#  In this context, robust means this function will continue to attempt the connection
+#  until successful, retrying at reasonable intervals. THe returned stream will have
+#  a pretty snappy timeout, so expect the connection to actually be robust!
+#  On all stream reads, be sure to catch issues reading (usually timeouts) and perhaps
+#  attempt to reconnect if needed.
+def robust_url_connect(url):
+    statusLED.off()
+    local_stream = None
+    print("Attempting to connect to \"" + url + "\"")
+    while local_stream  is None:
+        try:
+            local_stream  = u.urlopen(url, timeout=5.0)
+        except Exception as e:
+            print("Could not connect to \"" + url + "\".")
+            print("Reason: " + str(e))
+            time.sleep(1)
+            print("Retrying...")
+            local_stream  = None
+            continue
+    print("Successfully connected to camera image stream at \"" + url + "\"")
+    return local_stream
+
    
 ################################################################################
 # Main Processing algorithm
@@ -71,6 +109,8 @@ def img_process(img):
             #Calculate Center of image
             x += w / 2.0
             y += h / 2.0
+            
+            #Update global outputs about the found targets
             targetAreas.append(area)
             targetHeights.append(h)
             targetWidths.append(w)
@@ -83,27 +123,37 @@ def img_process(img):
 ### Main Method
 ################################################################################
 ################################################################################
-
+statusLED.off()
 
 #Open data stream from IP camera
-stream = urllib.urlopen('http://'+camera_IP+'/mjpg/video.mjpg')
+# Robust connect should hopefullyprevent race conditions between the camera 
+# booting and this software attemptting to connect to it.
+camera_url = 'http://'+camera_IP+'/mjpg/video.mjpg'
+stream = robust_url_connect(camera_url)
+
+#Reset byte stream and frame counter
 bytes = ''
 frame_counter = 0
 
-
+# Process command line arguments. 
+# Only one is possible: "--debug" will turn on image display for visual algorithm 
+#  debugging 
+if(len(sys.argv) == 2 and sys.argv[1] is "--debug"):
+    print("INFO: Debug images will be displayed.")
+    displayDebugImg = True
+    
 #Attempt to initalize graphics for displaying video feeds, if requested.
 if(displayDebugImg):
     try:
         result = cv2.startWindowThread()
     except Exception as e:
         result = -1
-        print("Exception while attempting to start display")
+        print("WARNING: Exception while attempting to start display")
         
     if(result != 1):
         #If we couldnt' open the feeds, force debugging images off but continue
-        # normally otherwise. This usually happens when this is run without a desktop
-        # environment available (headless run).
-        print("Warning, could not start graphics. Will not produce debugging images")
+        # normally otherwise. 
+        print("WARNING: could not start graphics. Will not produce debugging images")
         displayDebugImg = False
     
     
@@ -112,11 +162,21 @@ if(displayDebugImg):
 
 
 # Main execution loop
-while frame_counter < 300:
+while True:
 
     # Read data from the network in 1kb chunks
+    #  Catch any issues reading. if we have issues, try to reset the connection.
+    try:    
+        bytes += stream.read(4096)
+    except Exception as e:
+        print("WARNING: problems reading camera data from stream.")
+        print("Reason: " + str(e))
+        print("Attempting to restart connection...")
+        stream = robust_url_connect(camera_url)
+        continue
+
+
     #  Mark the time each chunk is fully read in.
-    bytes += stream.read(1024)
     ip_capture_time = millis()
     
     # Search for special byte sequences which indicate the start and end of
@@ -141,27 +201,39 @@ while frame_counter < 300:
         frame_counter = frame_counter+1
         
         
-        #Clear out the arrays which will hold the processed data
+        # Clear out the arrays which will hold the processed data
         targetAreas = []
         targetXs = []
         targetYs = []
         targetHeights = []
         targetWidths = []
 
-        #Process the image
+        # Process the image
         img_process(img)
         
         # Calculate processing time
         proc_time_ms = millis() - ip_capture_time
-        #Calculate present FPS (capture and processing)
-        fps = 1000/(frame_capture_time_ms - prev_frame_capture_time_ms)
+        # Calculate present FPS (capture and processing)
+        fps_current = 1000/(frame_capture_time_ms - prev_frame_capture_time_ms)
+        # Capture CPU metrics at a slower interval, we don't need to update these
+        #  super often.
+        if(frame_counter % 15 == 0):
+            cpu_load_pct = psutil.cpu_percent()
+            mem_load_pct = psutil.virtual_memory().percent
+            statusLED.transient(1, 250)
         
         # Output the actual processed data
         # Just printing for now, eventually this will be network tables
-        print(("Proc Time: %.2f ms" % proc_time_ms) + (" | FPS: %.2f" % fps))
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        print("Frame # "+ str(frame_counter))
+        print(("Proc Time: %.2f ms" % proc_time_ms) + 
+              (" | FPS: %.2f" % fps_current) + 
+              (" | CPU: %.1fpct" % cpu_load_pct)+
+              (" | MEM: %.1fpct" % mem_load_pct))
         print("Area: " + " | ".join(map(str,targetAreas)))
         print("X   : " + " | ".join(map(str,targetXs)))
         print("Y   : " + " | ".join(map(str,targetYs)))
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
         
         # Show debugging image
         if(displayDebugImg):
@@ -169,7 +241,8 @@ while frame_counter < 300:
             
         
 
-        
+#Turn off status LED
+statusLED.off()        
 # Close out any debugging windows
 if(displayDebugImg):
     cv2.destroyAllWindows() 

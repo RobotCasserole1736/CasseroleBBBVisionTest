@@ -30,7 +30,10 @@ Now install the python utilities needed:
     opkg install python-pip
     opkg install python-setuptools
     opkg install python-opencv
+    opkg install python-misc
+    opkg install python-modules
     pip install http://pypi.python.org/packages/source/p/pynetworktables/pynetworktables-2015.3.1.tar.gz
+    pip install psutil
    
 
 Get this repo onto the BBB:
@@ -43,17 +46,58 @@ Checkout your favorite release. Probably latest on master should be correct.
 To start the vision processing manually, run the "runVision.sh" script in the root of the repo.
 More instructions to come on how to set this up to go automatically at boot.
 
+# Script Design
+
+## Overall
+As is, the script is set up to maintain a robust connection with the IP camera,
+process frames as they come in, and post the processing results to NetworkTables
+(or just print them out, as it does now)
+
+The psutil library is used to monitor CPU and memory loading. 
+
+The exact data processed out of the image will change year to year. Some
+possibiilities include:
+
+* Total time from reciving the image to posting the processing results
+* For each target:
+  * X/Y position within the image
+  * Information for acessing the validity of the target
+    * Bounding Box Size/Area
+    * Infill percentage
+    * Skew
+
+
+## Network Connectivity
+The read and connect routines have fairly short timeouts, but will attempt to 
+reconnect indefinitely if the connection is ever lost. There's been some basic
+desktop testing to prove out that there are no race conditions between starting
+the camera and starting the BBB. 
+
+## Status LED
+To indicate status, the usual status LED is overwritten. During BBB boot sequence,
+the status LED will follow the default on-for-boot, then heartbeat until the
+vision processing script starts.
+
+Once the vision processing script has started, the LED will turn off fully. 
+As long as the script is waiting for a connection, the LED will remain dark. Once
+valid image frames are getting processed, the LED will turn back on to be mostly
+solid (occasional pulse off). If the LED ever goes off, it means the script is
+not actively processing frames. Usually this is due to lack of a network connetion
+to the IP camera
+
+
+
 #Notes on Cameras & Settings
 
-To get good images for processing, it's usually best to try to get a dark image. The only lit-up
-pixels should be the target in question.
+To get good images for processing, it's usually best to try to get a dark image. 
+The only lit-up pixels should be the target in question.
 
 This usually means
 
-    * Fixed (non-automatic) white balance
-    * Exposure turned down to minimum
-    * Brightness turned down to minimum
-    * All auto-adjustement disabled
+* Fixed (non-automatic) white balance
+* Exposure turned down to minimum
+* Brightness turned down to minimum
+* All auto-adjustement disabled
     
 Note that I've been testing with an axis M1013, which is a horrible camera choice
 since it is impossible to disable all brightness compensation. M1011 is better 
