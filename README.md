@@ -49,6 +49,7 @@ To get good images for processing, it's usually best to try to get a dark image.
 pixels should be the target in question.
 
 This usually means
+
     * Fixed (non-automatic) white balance
     * Exposure turned down to minimum
     * Brightness turned down to minimum
