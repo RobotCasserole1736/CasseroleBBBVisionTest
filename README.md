@@ -7,13 +7,15 @@ Their awesome work can be found [here](https://github.com/Frc2481/paul-bunyan).
 
 ##Basic Setup
 
+### Internet - dependent Prerequisites
+
 We will use the default angstrom linux distro.
 
 For first setup, the BBB must be connected to a network with internet access.
 
-On a brand new BBB, ssh into it using your favorite ssh utility.
+On a brand new BBB, ssh into it using your favorite ssh utility. You will likely have to look up the IP address by looking at the router setup page, and determining what DHCP address was assigned to the BBB.
 
-Login with:
+When prompted, login with:
 
     user: root
     password: <leave blank>
@@ -42,6 +44,22 @@ Get this repo onto the BBB:
     git clone https://github.com/RobotCasserole1736/CasseroleBBBVisionTest
     
 Checkout your favorite release. Probably latest on master should be correct.
+
+### Robot network - dependent Prerequisites
+
+Now that all the dependencies are installed, the unit should be moved and placed on the robot network (probably no internet access).
+Once this is done, log back in.
+
+Set a static IP address of 10.17.36.20, with the default gateway pointing to the router (usually 10.17.36.1)
+
+    ls -la /var/lib/connman/
+    cd /var/lib/connman/ethernet_[xx]
+    more settings
+    cd /usr/lib/connman/test
+    ./set-ipv4-method ethernet_[xx]_cable manual 10.17.36.20 255.255.255.0 10.17.36.1
+    reboot
+    
+Once the BBB boots again, you should be able to connect via the set up static IP address.
 
 To start the vision processing manually, run the "runVision.sh" script in the root of the repo.
 More instructions to come on how to set this up to go automatically at boot.
