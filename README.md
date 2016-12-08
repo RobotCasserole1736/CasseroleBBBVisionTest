@@ -7,26 +7,28 @@ Their awesome work can be found [here](https://github.com/Frc2481/paul-bunyan).
 
 ##Basic Setup
 
-### Internet - dependent Prerequisites
+### Logging in via SSH
 
 We will use the default angstrom linux distro.
 
 For first setup, the BBB must be connected to a network with internet access.
 
-On a brand new BBB, ssh into it using your favorite ssh utility. You will likely have to look up the IP address by looking at the router setup page, and determining what DHCP address was assigned to the BBB.
+On a brand new BBB, ssh into it using your favorite ssh utility. I use [putty](http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html) because of reasons. You will likely have to look up the IP address by looking at the router setup page, and determining what DHCP address was assigned to the BBB.
 
 When prompted, login with:
 
     user: root
     password: <leave blank>
     
-Yes it's bad to do stuff as root. But also easier. Just don't do silly things.
+Yes it's bad to do stuff as root. But also easier. Just don't do silly things. Never run "rm -rf /", no matter how cool you think it will make you look in front of your friends.
+
+### Installing Prerequisites on the BBB
 
 Update the time so SSL certificate validation occurs ok:
 
     ntpdate -b -s -u pool.ntp.org
 
-Now install the python utilities needed:
+Now install all the python utilities needed:
 
     opkg update
     opkg install python-pip
@@ -45,7 +47,7 @@ Get this repo onto the BBB:
     
 Checkout your favorite release. Probably latest on master should be correct.
 
-### Robot network - dependent Prerequisites
+### Static IP Setup
 
 Now that all the dependencies are installed, the unit should be moved and placed on the robot network (probably no internet access).
 Once this is done, log back in.
@@ -63,6 +65,53 @@ Once the BBB boots again, you should be able to connect via the set up static IP
 
 To start the vision processing manually, run the "runVision.sh" script in the root of the repo.
 More instructions to come on how to set this up to go automatically at boot.
+
+### Creating a Service for the Vision Processing Script
+
+A "service" is a linux-OS mechanism for running background tasks, automatically. By creating and installing a service for our vision processing algorithm, we can have the OS start it at boot, and restart it if it crashes.
+
+Copy the service definition file to its proper home on the in the OS system files.
+    
+    cp CasseroleVisionCoprocessor.service /lib/systemd/system/
+    
+Instruct the OS to run this at Boot:
+   
+    systemctl enable CasseroleVisionCoprocessor
+    
+Then reboot the system to test:
+   
+    reboot
+    
+Once the next boot happens, the vision processing script should start up right away. Anything which was printed to console may be viewed in the system logs (grepped for relevant lines, since _many many many_ things in the OS get dumped here):
+
+    journalctl | grep python
+
+If you've changed the python script and want the system to reload your updates, you can restart the service
+
+    systemctl restart CasseroleVisionCoprocessor
+    
+If you want to just manually run the script and not have it going in the background for some reason, you can temporarily stop it or start it back up:
+ 
+    systemctl stop CasseroleVisionCoprocessor
+    systemctl start CasseroleVisionCoprocessor
+    
+Finally, if you need it to not run at boot for debugging reasons, you can also uninstall the service:
+
+    systemctl disable CasseroleVisionCoprocessor
+    
+Remember to re-run enable before you go to competition!
+
+# Deploying Changes from Development PC
+
+To Be completed....
+
+## Development Process
+
+## GRIP Code generation
+
+## Deploy Process
+
+
 
 # Script Design
 
@@ -105,7 +154,7 @@ to the IP camera
 
 
 
-#Notes on Cameras & Settings
+# Notes on Cameras & Settings
 
 To get good images for processing, it's usually best to try to get a dark image. 
 The only lit-up pixels should be the target in question.
