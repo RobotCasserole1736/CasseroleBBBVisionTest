@@ -1,0 +1,2 @@
+python deploy.py
+pause
