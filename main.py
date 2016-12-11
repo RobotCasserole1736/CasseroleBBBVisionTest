@@ -4,16 +4,21 @@ import numpy as np
 import os, sys
 from datetime import datetime
 from datetime import timedelta
+from networktables import NetworkTable
 import time
 import psutil
 import pythonled
+import Pipeline
 
 ################################################################################
 #Config Data
 ################################################################################
 
 #Fixed IP address of IP Camera
-camera_IP = '10.111.76.25'
+camera_IP = '10.17.36.11'
+
+#Fixed IP address of this BBB
+bbb_IP = '10.17.36.20'
 
 ################################################################################
 # Global Data
@@ -27,7 +32,7 @@ targetWidths = []
 #global flag to turn debug display on and off
 # Presently attempts to display images, so shouldn't
 # ever get turned on if running without a display
-# hooked up (or VNC or something like that
+# hooked up (or VNC or something like that...)
 displayDebugImg = False
 
 #Timestamp tracking info. Needed for performance metrics and for reporting
@@ -46,6 +51,9 @@ mem_load_pct = 0
 
 #Status LED
 statusLED = pythonled.pythonled(0)
+
+#image pipeline
+procPipeline = Pipeline()
 
 
 
@@ -84,38 +92,23 @@ def robust_url_connect(url):
 
    
 ################################################################################
-# Main Processing algorithm
+# Main Processing algorithm... or a thin wrapper around it?
 ################################################################################
 def img_process(img):
-    hsv_thres_lower = np.array([0,0,117])
-    hsv_thres_upper = np.array([180,255,255])
-    
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    hsv_mask = cv2.inRange(hsv, hsv_thres_lower, hsv_thres_upper)
-    
 
-    contours, hierarchy = cv2.findContours(hsv_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_TC89_KCOS)
+    #Run the generated GRIP image processing pipeline
+    procPipeline.set_source0(img)
+    procPipeline.process()
 
-    for c in contours:
-
-        area = cv2.contourArea(c)
+    #Extract relevant outputs
+    for c in procPipeline.filter_contours_output:
         x, y, w, h = cv2.boundingRect(c)
-
-
-        if (area > 150 and          #Min Area
-               w < 100 and          #Max Width
-               h < 1000):           #Max Height
-
-            #Calculate Center of image
-            x += w / 2.0
-            y += h / 2.0
-            
-            #Update global outputs about the found targets
-            targetAreas.append(area)
-            targetHeights.append(h)
-            targetWidths.append(w)
-            targetXs.append(x)
-            targetYs.append(y)
+        
+        #Update global outputs about the found targets
+        targetHeights.append(h)
+        targetWidths.append(w)
+        targetXs.append(x)
+        targetYs.append(y)
 
 
 ################################################################################
@@ -141,6 +134,12 @@ frame_counter = 0
 if(len(sys.argv) == 2 and sys.argv[1] is "--debug"):
     print("INFO: Debug images will be displayed.")
     displayDebugImg = True
+    
+# Start networkTables client and get the table for our vision processing results
+NetworkTable.setIPAddress(bbb_IP)
+NetworkTable.setClientMode()
+NetworkTable.initialize()
+resultsTable = NetworkTable.getTable("CasseroleVision")
     
 #Attempt to initalize graphics for displaying video feeds, if requested.
 if(displayDebugImg):
@@ -222,22 +221,35 @@ while True:
             mem_load_pct = psutil.virtual_memory().percent
             statusLED.transient(1, 250)
         
-        # Output the actual processed data
-        # Just printing for now, eventually this will be network tables
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        print("Frame # "+ str(frame_counter))
-        print(("Proc Time: %.2f ms" % proc_time_ms) + 
-              (" | FPS: %.2f" % fps_current) + 
-              (" | CPU: %.1fpct" % cpu_load_pct)+
-              (" | MEM: %.1fpct" % mem_load_pct))
-        print("Area: " + " | ".join(map(str,targetAreas)))
-        print("X   : " + " | ".join(map(str,targetXs)))
-        print("Y   : " + " | ".join(map(str,targetYs)))
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
+        # Output the actual processed data 
+        resultsTable.putValue("FrameCounter", frame_counter)
+        resultsTable.putValue("ProcTime", proc_time_ms)
+        resultsTable.putValue("X", NumberArray.from_list(targetXs))
+        resultsTable.putValue("Y", NumberArray.from_list(targetYs))
+        resultsTable.putValue("H", NumberArray.from_list(targetHeights))
+        resultsTable.putValue("W", NumberArray.from_list(targetWidths))
+        resultsTable.putValue("CpuLoad", cpu_load_pct)
+        resultsTable.putValue("MemLoad", mem_load_pct)
+        resultsTable.putValue("FPS", fps_current)
+        
+        # Debug printing
+        # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        # print("Frame # "+ str(frame_counter))
+        # print(("Proc Time: %.2f ms" % proc_time_ms) + 
+        #       (" | FPS: %.2f" % fps_current) + 
+        #       (" | CPU: %.1fpct" % cpu_load_pct)+
+        #       (" | MEM: %.1fpct" % mem_load_pct))
+        # print("Area: " + " | ".join(map(str,targetAreas)))
+        # print("X   : " + " | ".join(map(str,targetXs)))
+        # print("Y   : " + " | ".join(map(str,targetYs)))
+        # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
         
         # Show debugging image
         if(displayDebugImg):
             cv2.imshow('Video', img) 
+            
+        # I'm presuming this is needed to allow background things to hapapen
+        sleep(.01)
             
         
 

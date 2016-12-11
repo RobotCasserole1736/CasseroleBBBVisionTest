@@ -84,12 +84,12 @@ print("Stopping vision coprocessor service")
 runCmd(cmd)
 
 #Copy python scripts
-cmd = scp_exe + "root@" + TARGET_IP_ADDRESS + TARGET_SCRIPT_DIR + " ./*.py"
+cmd = scp_exe + "root@" + TARGET_IP_ADDRESS + TARGET_SCRIPT_DIR + " ../*.py"
 print("Copying python scripts")
 runCmd(cmd)
 
 #Copy service
-cmd = scp_exe + "root@" + TARGET_IP_ADDRESS + TARGET_SERVICE_DIR + " ./CasseroleVisionCoprocessor.service"
+cmd = scp_exe + "root@" + TARGET_IP_ADDRESS + TARGET_SERVICE_DIR + " ../CasseroleVisionCoprocessor.service"
 print("Copying service definition")
 runCmd(cmd)
 
