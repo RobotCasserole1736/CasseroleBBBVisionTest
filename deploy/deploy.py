@@ -1,5 +1,6 @@
 import os, sys
 import subprocess 
+import time
 
 #Possible paths for SSH and SCP - assume we're using the ones from the GIT install,
 # but don't assume people put them on their paths. Chris Gerth forces the C/B/D drive
@@ -32,15 +33,25 @@ def isExecutable(fpath):
     return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
     
 #Runs command with error checking and prints info
-def runCmd(cmd):
-    print("DEBUG: Running " + cmd)
-    try:
-        retstr = subprocess.check_output(cmd, stderr=subprocess.STDOUT,shell=True).decode('utf-8')
-    except Exception as E:
-        print("ERROR: issues while running command " + cmd)
-        print(E)
+def runCmd(cmd, ignore_error=False, cmd_stdin = None):
+    errors_present = False
+    retstr = ""
+    print("\n\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    print("Running command:\n" + cmd)
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,stdin=subprocess.PIPE)
+    if(cmd_stdin != None):
+        proc.stdin.write(cmd_stdin.encode())
+    retstr = proc.communicate()[0]
+    retstr = retstr.decode('utf-8')
+
+    if((errors_present or proc.returncode != 0) and ignore_error == False):
+        print("Error while running command:\n" + retstr)
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n\n")
         sys.exit(-1)
-    print("DEBUG: Command returned \n" + retstr)
+        
+    print("Command returned:\n" + retstr)
+    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n\n")
     return retstr
     
     
@@ -79,28 +90,38 @@ if("unreachable" in retstr):
     print("ERROR: Attempted ping, but cannot contact target at " + TARGET_IP_ADDRESS)
     sys.exit(-1)
     
+time.sleep(1)
 
 #Pre-steps: stop service on roboRIO
-cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl stop CasseroleVisionCoprocessor"
+cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl stop CasseroleVisionCoprocessor " 
 print("Stopping vision coprocessor service")
-runCmd(cmd)
+runCmd(cmd, True, "\n")
+
+time.sleep(1)
 
 #Copy python scripts
-cmd = scp_exe + " root@" + TARGET_IP_ADDRESS + TARGET_SCRIPT_DIR + " ../*.py"
+cmd = scp_exe + " ../*.py" + " root@" + TARGET_IP_ADDRESS + ":"+ TARGET_SCRIPT_DIR 
 print("Copying python scripts")
-runCmd(cmd)
+runCmd(cmd, False, "\n")
+
+time.sleep(1)
+
 
 #Copy service
-cmd = scp_exe + " root@" + TARGET_IP_ADDRESS + TARGET_SERVICE_DIR + " ../CasseroleVisionCoprocessor.service"
+cmd = scp_exe + " ../CasseroleVisionCoprocessor.service" + " root@" + TARGET_IP_ADDRESS + ":" + TARGET_SERVICE_DIR
 print("Copying service definition")
-runCmd(cmd)
+runCmd(cmd, False, "\n")
+
+
+time.sleep(1)
+
 
 #Post-steps: start and enalble service
 print("Restarting services")
-cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl enable CasseroleVisionCoprocessor"
-runCmd(cmd)
-cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl start CasseroleVisionCoprocessor"
-runCmd(cmd)
+cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl start CasseroleVisionCoprocessor "
+runCmd(cmd, False, "\n")
+
+sys.exit(0)
     
-print("Vision service deployed!")
+print("SUCCESS: Vision service deployed!")
                  
