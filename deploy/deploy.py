@@ -90,21 +90,18 @@ if("unreachable" in retstr):
     print("ERROR: Attempted ping, but cannot contact target at " + TARGET_IP_ADDRESS)
     sys.exit(-1)
     
-time.sleep(1)
 
 #Pre-steps: stop service on roboRIO
-cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl stop CasseroleVisionCoprocessor " 
-print("Stopping vision coprocessor service")
-runCmd(cmd, True, "\n")
+#cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl stop CasseroleVisionCoprocessor ; systemctl enable CasseroleVisionCoprocessor" 
+#print("Stopping vision coprocessor service")
+#runCmd(cmd, True, "\n")
 
-time.sleep(1)
 
 #Copy python scripts
 cmd = scp_exe + " ../*.py" + " root@" + TARGET_IP_ADDRESS + ":"+ TARGET_SCRIPT_DIR 
 print("Copying python scripts")
 runCmd(cmd, False, "\n")
 
-time.sleep(1)
 
 
 #Copy service
@@ -113,12 +110,10 @@ print("Copying service definition")
 runCmd(cmd, False, "\n")
 
 
-time.sleep(1)
-
 
 #Post-steps: start and enalble service
-print("Restarting services")
-cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl start CasseroleVisionCoprocessor "
+print("Restarting BBB CoProcessor ")
+cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " /sbin/shutdown -r now& "
 runCmd(cmd, False, "\n")
 
 sys.exit(0)
