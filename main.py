@@ -4,11 +4,12 @@ import numpy as np
 import os, sys
 from datetime import datetime
 from datetime import timedelta
-from networktables import NetworkTable
 import time
 import psutil
 import pythonled
 import Pipeline
+import targetObservation
+import UDPServer
 
 ################################################################################
 #Config Data
@@ -23,11 +24,9 @@ bbb_IP = '10.17.36.20'
 ################################################################################
 # Global Data
 ################################################################################
-targetAreas = []
-targetXs = []
-targetYs = []
-targetHeights = []
-targetWidths = []
+
+#data structure object to hold info about the present data processed from the image fram
+curObservation = TargetObservation()
 
 #global flag to turn debug display on and off
 # Presently attempts to display images, so shouldn't
@@ -52,9 +51,11 @@ mem_load_pct = 0
 #Status LED
 statusLED = pythonled.pythonled(0)
 
-#image pipeline
+# image processing pipeline (codegenerated from GRIP)
 procPipeline = Pipeline()
 
+# Server to transmit processed data over UDP to the roboRIO
+outputDataServer = UDPServer(send_to_address = "10.17.36.2", send_to_port = 5489)
 
 
 ################################################################################
@@ -66,7 +67,7 @@ def millis():
    dt = datetime.now() - execution_start_time_ms
    ms = (dt.days * 24 * 60 * 60 + dt.seconds) * 1000 + dt.microseconds / 1000.0
    return ms
-   
+
 # Performs a robust connection to a given URL, and returns a stream once created
 #  In this context, robust means this function will continue to attempt the connection
 #  until successful, retrying at reasonable intervals. THe returned stream will have
@@ -90,7 +91,7 @@ def robust_url_connect(url):
     print("Successfully connected to camera image stream at \"" + url + "\"")
     return local_stream
 
-   
+
 ################################################################################
 # Main Processing algorithm... or a thin wrapper around it?
 ################################################################################
@@ -100,15 +101,11 @@ def img_process(img):
     procPipeline.set_source0(img)
     procPipeline.process()
 
-    #Extract relevant outputs
+
+    #Extract relevant outputs into the current observation
     for c in procPipeline.filter_contours_output:
         x, y, w, h = cv2.boundingRect(c)
-        
-        #Update global outputs about the found targets
-        targetHeights.append(h)
-        targetWidths.append(w)
-        targetXs.append(x)
-        targetYs.append(y)
+        curObservation.addTarget(x, y, 0, w, h) #area unused for now.
 
 
 ################################################################################
@@ -119,28 +116,24 @@ def img_process(img):
 statusLED.off()
 
 #Open data stream from IP camera
-# Robust connect should hopefullyprevent race conditions between the camera 
+# Robust connect should hopefullyprevent race conditions between the camera
 # booting and this software attemptting to connect to it.
 camera_url = 'http://'+camera_IP+'/mjpg/video.mjpg'
-stream = robust_url_connect(camera_url)
+camera_data_stream = robust_url_connect(camera_url)
 
 #Reset byte stream and frame counter
 bytes = ''
 frame_counter = 0
 
-# Process command line arguments. 
-# Only one is possible: "--debug" will turn on image display for visual algorithm 
-#  debugging 
+# Process command line arguments.
+# Only one is possible: "--debug" will turn on image display for visual algorithm
+#  debugging
 if(len(sys.argv) == 2 and sys.argv[1] is "--debug"):
     print("INFO: Debug images will be displayed.")
     displayDebugImg = True
-    
-# Start networkTables client and get the table for our vision processing results
-NetworkTable.setIPAddress(bbb_IP)
-NetworkTable.setClientMode()
-NetworkTable.initialize()
-resultsTable = NetworkTable.getTable("CasseroleVision")
-    
+
+# Start json server which will spew info to the roboRIO
+
 #Attempt to initalize graphics for displaying video feeds, if requested.
 if(displayDebugImg):
     try:
@@ -148,14 +141,14 @@ if(displayDebugImg):
     except Exception as e:
         result = -1
         print("WARNING: Exception while attempting to start display")
-        
+
     if(result != 1):
         #If we couldnt' open the feeds, force debugging images off but continue
-        # normally otherwise. 
+        # normally otherwise.
         print("WARNING: could not start graphics. Will not produce debugging images")
         displayDebugImg = False
-    
-    
+
+
 if(displayDebugImg):
     cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
 
@@ -165,29 +158,29 @@ while True:
 
     # Read data from the network in 1kb chunks
     #  Catch any issues reading. if we have issues, try to reset the connection.
-    try:    
-        bytes += stream.read(4096)
+    try:
+        bytes += camera_data_stream.read(4096)
     except Exception as e:
         print("WARNING: problems reading camera data from stream.")
         print("Reason: " + str(e))
         print("Attempting to restart connection...")
-        stream = robust_url_connect(camera_url)
+        camera_data_stream = robust_url_connect(camera_url)
         continue
 
 
     #  Mark the time each chunk is fully read in.
     ip_capture_time = millis()
-    
+
     # Search for special byte sequences which indicate the start and end of
     #  single-video-frame image data
     b = bytes.rfind('\xff\xd9')
     a = bytes.rfind('\xff\xd8', 0, b-1)
-    
+
     #Check if the presence of both markers indicate a full image is in the input buffer
     if a != -1 and b != -1:
         # Image frame has been found, Conver the data to an image in prep for processing
-        
-        # Extract the raw image data 
+
+        # Extract the raw image data
         jpg = bytes[a:b+2]
         # Clear processed bytes from the input data buffer
         bytes = bytes[b+2:]
@@ -198,65 +191,56 @@ while True:
         frame_capture_time_ms = ip_capture_time
         # Update the image counter
         frame_counter = frame_counter+1
-        
-        
+
+
         # Clear out the arrays which will hold the processed data
-        targetAreas = []
-        targetXs = []
-        targetYs = []
-        targetHeights = []
-        targetWidths = []
+        curObservation.clear()
 
         # Process the image
         img_process(img)
-        
-        # Calculate processing time
-        proc_time_ms = millis() - ip_capture_time
-        # Calculate present FPS (capture and processing)
-        fps_current = 1000/(frame_capture_time_ms - prev_frame_capture_time_ms)
+
         # Capture CPU metrics at a slower interval, we don't need to update these
         #  super often.
         if(frame_counter % 15 == 0):
             cpu_load_pct = psutil.cpu_percent()
             mem_load_pct = psutil.virtual_memory().percent
             statusLED.transient(1, 250)
-        
-        # Output the actual processed data 
-        resultsTable.putValue("FrameCounter", frame_counter)
-        resultsTable.putValue("ProcTime", proc_time_ms)
-        resultsTable.putValue("X", NumberArray.from_list(targetXs))
-        resultsTable.putValue("Y", NumberArray.from_list(targetYs))
-        resultsTable.putValue("H", NumberArray.from_list(targetHeights))
-        resultsTable.putValue("W", NumberArray.from_list(targetWidths))
-        resultsTable.putValue("CpuLoad", cpu_load_pct)
-        resultsTable.putValue("MemLoad", mem_load_pct)
-        resultsTable.putValue("FPS", fps_current)
-        
+
+        # Calculate processing time
+        proc_time_ms = millis() - ip_capture_time
+        # Calculate present FPS (capture and processing)
+        fps_current = 1000/(frame_capture_time_ms - prev_frame_capture_time_ms)
+
+        # Add the metadata to the present target observation data
+        curObservation.setMetadata(frame_counter,proc_time_ms,cpu_load_pct,mem_load_pct,fps_current)
+
+        # Transmit the vision processing results to the roboRIO
+        outputDataServer.sendString(curObservation.toJsonString())
+
+
         # Debug printing
         # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
         # print("Frame # "+ str(frame_counter))
-        # print(("Proc Time: %.2f ms" % proc_time_ms) + 
-        #       (" | FPS: %.2f" % fps_current) + 
+        # print(("Proc Time: %.2f ms" % proc_time_ms) +
+        #       (" | FPS: %.2f" % fps_current) +
         #       (" | CPU: %.1fpct" % cpu_load_pct)+
         #       (" | MEM: %.1fpct" % mem_load_pct))
         # print("Area: " + " | ".join(map(str,targetAreas)))
         # print("X   : " + " | ".join(map(str,targetXs)))
         # print("Y   : " + " | ".join(map(str,targetYs)))
         # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
-        
+
         # Show debugging image
         if(displayDebugImg):
-            cv2.imshow('Video', img) 
-            
+            cv2.imshow('Video', img)
+
         # I'm presuming this is needed to allow background things to hapapen
         sleep(.01)
-            
-        
+
+
 
 #Turn off status LED
-statusLED.off()        
+statusLED.off()
 # Close out any debugging windows
 if(displayDebugImg):
-    cv2.destroyAllWindows() 
-
-
+    cv2.destroyAllWindows()
