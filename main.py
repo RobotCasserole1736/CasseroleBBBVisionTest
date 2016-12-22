@@ -8,7 +8,7 @@ import time
 import psutil
 import pythonled
 import Pipeline
-import targetObservation
+import TargetObservation
 import UDPServer
 
 ################################################################################
@@ -26,7 +26,7 @@ bbb_IP = '10.17.36.20'
 ################################################################################
 
 #data structure object to hold info about the present data processed from the image fram
-curObservation = TargetObservation()
+curObservation = TargetObservation.TargetObservation()
 
 #global flag to turn debug display on and off
 # Presently attempts to display images, so shouldn't
@@ -52,10 +52,10 @@ mem_load_pct = 0
 statusLED = pythonled.pythonled(0)
 
 # image processing pipeline (codegenerated from GRIP)
-procPipeline = Pipeline()
+procPipeline = Pipeline.Pipeline()
 
 # Server to transmit processed data over UDP to the roboRIO
-outputDataServer = UDPServer(send_to_address = "10.17.36.2", send_to_port = 5489)
+outputDataServer = UDPServer.UDPServer(send_to_address = "10.17.36.2", send_to_port = 5800)
 
 
 ################################################################################
@@ -96,7 +96,7 @@ def robust_url_connect(url):
 # Main Processing algorithm... or a thin wrapper around it?
 ################################################################################
 def img_process(img):
-
+    """
     #Run the generated GRIP image processing pipeline
     procPipeline.set_source0(img)
     procPipeline.process()
@@ -106,6 +106,22 @@ def img_process(img):
     for c in procPipeline.filter_contours_output:
         x, y, w, h = cv2.boundingRect(c)
         curObservation.addTarget(x, y, 0, w, h) #area unused for now.
+    """
+        
+    hsv_thres_lower = np.array([39,156,9])
+    hsv_thres_upper = np.array([92,255,255])
+    
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    hsv_mask = cv2.inRange(hsv, hsv_thres_lower, hsv_thres_upper)
+    
+
+    contours, hierarchy = cv2.findContours(hsv_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_TC89_KCOS)
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        #minimal amount of qualification on targets
+        if(w > 10 and h > 10): 
+            curObservation.addTarget(x, y, 0, w, h) #area unused for now.
+
 
 
 ################################################################################
@@ -235,7 +251,7 @@ while True:
             cv2.imshow('Video', img)
 
         # I'm presuming this is needed to allow background things to hapapen
-        sleep(.01)
+        time.sleep(.01)
 
 
 

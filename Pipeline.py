@@ -1,7 +1,7 @@
 import cv2
 import numpy
 import math
-from enum import Enum
+
 
 class Pipeline:
     """This is a generated class from GRIP.
