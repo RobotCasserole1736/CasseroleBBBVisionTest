@@ -53,7 +53,7 @@ statusLED0 = pythonled.pythonled(0)
 statusLED1 = pythonled.pythonled(1)
 statusLED2 = pythonled.pythonled(2)
 statusLED3 = pythonled.pythonled(3)
-ledStatus = False;
+ledStatus = False
 
 # image processing pipeline (codegenerated from GRIP)
 procPipeline = Pipeline.Pipeline()
@@ -75,7 +75,7 @@ def indicateLEDsProcessingActive():
     global ledStatus
     
     if(ledStatus == False):
-        statusLED1.heartbeat()
+        statusLED1.on()
         ledStatus = True
 
 
@@ -96,8 +96,9 @@ def robust_url_connect(url):
     print("Attempting to connect to \"" + url + "\"")
     while local_stream  is None:
         try:
-            local_stream  = u.urlopen(url, timeout=5.0)
+            local_stream  = u.urlopen(url, timeout=2.0)
         except Exception as e:
+            indicateLEDsNotRunning()
             print("Could not connect to \"" + url + "\".")
             print("Reason: " + str(e))
             time.sleep(1)
@@ -145,6 +146,7 @@ def img_process(img):
 ### Main Method
 ################################################################################
 ################################################################################
+ledStatus = False
 indicateLEDsNotRunning()
 
 #Open data stream from IP camera
@@ -247,7 +249,6 @@ while True:
 
         # Transmit the vision processing results to the roboRIO
         outputDataServer.sendString(curObservation.toJsonString())
-        
         indicateLEDsProcessingActive()
 
 
