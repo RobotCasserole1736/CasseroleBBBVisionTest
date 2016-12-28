@@ -13,7 +13,7 @@ class UDPServer(object):
         # SOCK_DGRAM indicates UDP (instead of TCP)
         # Note address and port must match what the robot Java code is configured
         #  to listen on.
-        # Per the FMS whitepaper, we have ports 5800 through 5810 available, so we'll pick 5800
+        # Per the FMS whitepaper, we have ports 5800 through 5810 available, so we'll pick 5800 as default
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.conn = self.socket
         self._timeout = None
@@ -35,10 +35,10 @@ class UDPServer(object):
             sent += self.conn.sendto(msg[sent:],(self._address, self._port))
 
     def close(self):
-        logger.debug("closing main socket")
+        print("closing main socket")
         self._closeSocket()
         if self.socket is not self.conn:
-            logger.debug("closing connection socket")
+            print("closing connection socket")
             self._closeConnection()
 
     def _closeSocket(self):

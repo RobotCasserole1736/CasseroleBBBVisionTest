@@ -49,18 +49,35 @@ mem_load_pct = 0
 
 
 #Status LED
-statusLED = pythonled.pythonled(0)
+statusLED0 = pythonled.pythonled(0)
+statusLED1 = pythonled.pythonled(1)
+statusLED2 = pythonled.pythonled(2)
+statusLED3 = pythonled.pythonled(3)
+ledStatus = False;
 
 # image processing pipeline (codegenerated from GRIP)
 procPipeline = Pipeline.Pipeline()
 
 # Server to transmit processed data over UDP to the roboRIO
-outputDataServer = UDPServer.UDPServer(send_to_address = "10.17.36.2", send_to_port = 5800)
+outputDataServer = UDPServer.UDPServer(send_to_address = "roborio-1736-frc.local", send_to_port = 5800)
 
 
 ################################################################################
 # Utility Functions
 ################################################################################
+
+def indicateLEDsNotRunning():
+    statusLED1.off()
+    ledStatus = False
+
+    
+def indicateLEDsProcessingActive():
+    global ledStatus
+    
+    if(ledStatus == False):
+        statusLED1.heartbeat()
+        ledStatus = True
+
 
 # returns the elapsed milliseconds since the start of the program
 def millis():
@@ -75,7 +92,6 @@ def millis():
 #  On all stream reads, be sure to catch issues reading (usually timeouts) and perhaps
 #  attempt to reconnect if needed.
 def robust_url_connect(url):
-    statusLED.off()
     local_stream = None
     print("Attempting to connect to \"" + url + "\"")
     while local_stream  is None:
@@ -129,7 +145,7 @@ def img_process(img):
 ### Main Method
 ################################################################################
 ################################################################################
-statusLED.off()
+indicateLEDsNotRunning()
 
 #Open data stream from IP camera
 # Robust connect should hopefullyprevent race conditions between the camera
@@ -220,7 +236,6 @@ while True:
         if(frame_counter % 15 == 0):
             cpu_load_pct = psutil.cpu_percent()
             mem_load_pct = psutil.virtual_memory().percent
-            statusLED.transient(1, 250)
 
         # Calculate processing time
         proc_time_ms = millis() - ip_capture_time
@@ -232,6 +247,8 @@ while True:
 
         # Transmit the vision processing results to the roboRIO
         outputDataServer.sendString(curObservation.toJsonString())
+        
+        indicateLEDsProcessingActive()
 
 
         # Debug printing
@@ -256,7 +273,7 @@ while True:
 
 
 #Turn off status LED
-statusLED.off()
+indicateLEDsNotRunning()
 # Close out any debugging windows
 if(displayDebugImg):
     cv2.destroyAllWindows()

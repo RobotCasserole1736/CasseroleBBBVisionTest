@@ -1,0 +1,2 @@
+python checkJournal.py
+pause

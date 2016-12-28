@@ -24,9 +24,7 @@ SCP_PATH_LIST = ["C:\\Program Files\\Git\\mingw32\\bin\\scp.exe",
 #Beaglebone Black should be at a fixed IP address
 TARGET_IP_ADDRESS = "10.17.36.20"
        
-#Path to root directory where we put the files on the remote
-TARGET_SCRIPT_DIR = "~/CasseroleVision/"
-TARGET_SERVICE_DIR = "/lib/systemd/system/"
+
 
 #Utility to determine if path is an executable   
 def isExecutable(fpath):
@@ -92,31 +90,12 @@ if("unreachable" in retstr):
     
 
 #Pre-steps: Make directory on target if not already existing
-cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " mkdir -p " + TARGET_SCRIPT_DIR
-print("Running pre-steps...")
+cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " systemctl enable CasseroleVisionCoprocessor.service ; systemctl start CasseroleVisionCoprocessor.service "
+print("Querying for info about python scripts...")
 runCmd(cmd, True, "\n")
 
 
-#Copy python scripts
-cmd = scp_exe + " ../*.py" + " root@" + TARGET_IP_ADDRESS + ":"+ TARGET_SCRIPT_DIR 
-print("Copying python scripts...")
-runCmd(cmd, False, "\n")
-
-
-
-#Copy service
-cmd = scp_exe + " ../CasseroleVisionCoprocessor.service" + " root@" + TARGET_IP_ADDRESS + ":" + TARGET_SERVICE_DIR
-print("Copying service definition...")
-runCmd(cmd, False, "\n")
-
-
-
-#Post-steps: start and enalble service
-print("Restarting BBB CoProcessor ")
-cmd = ssh_exe + " root@" + TARGET_IP_ADDRESS + " /sbin/shutdown -r now& "
-runCmd(cmd, False, "\n")
 
 sys.exit(0)
-    
-print("SUCCESS: Vision service deployed!")
+
                  
